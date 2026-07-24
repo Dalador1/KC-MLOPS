@@ -19,37 +19,48 @@ class EmailLabel(Enum):
 
 
 class User:
-    """Пользователь сервиса"""
+    """Пользователь сервиса."""
 
-    def __init__(self, email: str, password_hash: str, role: UserRole, balance: int) -> None:
+    def __init__(self, email: str, password_hash: str, role: UserRole) -> None:
         self._email = email
         self.__password_hash = password_hash
         self._role = role
-        self.__balance = balance
 
     @property
-    def balance(self) -> int:
-        return self.__balance
-
-    def can_pay(self, amount: int) -> bool:
-        return self.__balance >= amount
-
-    def top_up(self, amount: int) -> None:
-        if amount <= 0:
-            raise ValueError("Сумма не может быть отрицательной")
-        self.__balance += amount
-
-    def charge(self, amount: int) -> None:
-        if not self.can_pay(amount):
-            raise ValueError("Недостаточно средств")
-        self.__balance -= amount
+    def email(self) -> str:
+        return self._email
 
     def check_password(self, password: str) -> bool:
         ...
 
 
+class CreditBalance:
+    """Кредитный баланс пользователя."""
+
+    def __init__(self, user_email: str, amount: int = 0) -> None:
+        self._user_email = user_email
+        self.__amount = amount
+
+    @property
+    def amount(self) -> int:
+        return self.__amount
+
+    def can_pay(self, amount: int) -> bool:
+        return self.__amount >= amount
+
+    def top_up(self, amount: int) -> None:
+        if amount <= 0:
+            raise ValueError("Сумма пополнения должна быть положительной")
+        self.__amount += amount
+
+    def charge(self, amount: int) -> None:
+        if not self.can_pay(amount):
+            raise ValueError("Недостаточно средств")
+        self.__amount -= amount
+
+
 class EmailMessage:
-    """Письмо для проверки"""
+    """Письмо для проверки."""
 
     def __init__(self, subject: str, body: str) -> None:
         self._subject = subject
@@ -63,7 +74,7 @@ class EmailMessage:
 
 
 class ValidationError:
-    """Ошибка во входных данных"""
+    """Ошибка во входных данных."""
 
     def __init__(self, row: int, field: str, message: str) -> None:
         self._row = row
@@ -72,7 +83,7 @@ class ValidationError:
 
 
 class EmailValidator:
-    """Проверяет загруженные письма"""
+    """Проверяет загруженные письма."""
 
     def validate(
         self,
@@ -100,7 +111,7 @@ class EmailPrediction:
 
 
 class SpamModel:
-    """Базовая ML-модель для spam/ham."""
+    """ML-модель для определения spam/ham."""
 
     def __init__(self, name: str, cost_per_email: int) -> None:
         self._name = name
@@ -113,15 +124,8 @@ class SpamModel:
         ...
 
 
-class RuSpamModel(SpamModel):
-    """Русская spam/ham модель."""
-
-    def predict(self, emails: list[EmailMessage]) -> list[EmailPrediction]:
-        ...
-
-
 class PredictionRequest:
-    """Задача на проверку писем"""
+    """Задача на проверку писем."""
 
     def __init__(
         self,
@@ -156,26 +160,26 @@ class PredictionRequest:
 
 
 class Transaction:
-    """Операция с балансом"""
+    """Операция с балансом."""
 
     def __init__(self, user_email: str, amount: int, created_at: datetime) -> None:
         self._user_email = user_email
         self._amount = amount
         self._created_at = created_at
 
-    def apply(self, user: User) -> None:
+    def apply(self, balance: CreditBalance) -> None:
         ...
 
 
 class TopUp(Transaction):
-    """Пополнение баланса"""
+    """Пополнение баланса."""
 
-    def apply(self, user: User) -> None:
-        user.top_up(self._amount)
+    def apply(self, balance: CreditBalance) -> None:
+        balance.top_up(self._amount)
 
 
 class Charge(Transaction):
-    """Списание за проверку"""
+    """Списание за проверку."""
 
-    def apply(self, user: User) -> None:
-        user.charge(self._amount)
+    def apply(self, balance: CreditBalance) -> None:
+        balance.charge(self._amount)
