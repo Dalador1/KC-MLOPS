@@ -5,7 +5,7 @@ from sqlalchemy.exc import OperationalError
 from .database import SessionLocal, engine
 from .models.enums import UserRole
 from .orm import Base
-from .services import create_spam_model, create_user, top_up_balance
+from .services import create_spam_model, create_user, hash_password, top_up_balance
 
 
 def init_db() -> None:
@@ -22,14 +22,14 @@ def init_db() -> None:
         user = create_user(
             session=session,
             email="demo@example.com",
-            password_hash="demo_password_hash",
+            password_hash=hash_password("demo"),
             role=UserRole.USER,
             initial_balance=0,
         )
-        create_user(
+        admin = create_user(
             session=session,
             email="admin@example.com",
-            password_hash="admin_password_hash",
+            password_hash=hash_password("admin"),
             role=UserRole.ADMIN,
             initial_balance=0,
         )
@@ -37,6 +37,10 @@ def init_db() -> None:
 
         if user.balance.amount == 0:
             top_up_balance(session, user=user, amount=100)
+
+        user.password_hash = hash_password("demo")
+        admin.password_hash = hash_password("admin")
+        session.commit()
 
 
 if __name__ == "__main__":

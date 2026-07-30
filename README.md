@@ -30,7 +30,14 @@
 │   │   ├── init_db.py
 │   │   ├── main.py
 │   │   ├── orm.py
+│   │   ├── schemas.py
 │   │   ├── services.py
+│   │   ├── routes/
+│   │   │   ├── auth.py
+│   │   │   ├── balance.py
+│   │   │   ├── history.py
+│   │   │   ├── predict.py
+│   │   │   └── users.py
 │   │   └── models/
 │   │       ├── balance.py
 │   │       ├── email.py
@@ -104,4 +111,37 @@ curl http://localhost/health
 
 ```bash
 docker compose exec app python -m src.check_db
+```
+
+## REST API
+
+FastAPI-приложение разбито на группы роутов:
+
+- `/auth/register` - регистрация пользователя.
+- `/auth/login` - авторизация по email и паролю.
+- `/users/me` - данные текущего пользователя.
+- `/balance` - просмотр баланса.
+- `/balance/top-up` - пополнение баланса.
+- `/predict` - проверка писем на spam/ham.
+- `/history/predictions` - история ML-запросов.
+- `/history/transactions` - история операций с балансом.
+
+Авторизация в текущем задании простая: защищённые ручки получают `email` и `password` в теле запроса.
+Настоящая ML-модель пока замокана: сервис возвращает `spam` для писем с простыми рекламными словами и `ham` для остальных.
+
+Пример запроса:
+
+```bash
+curl -X POST http://localhost/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "demo@example.com",
+    "password": "demo",
+    "model_name": "spam-ham-default",
+    "emails": [
+      {"subject": "Sale", "body": "Buy now"},
+      {"subject": "Meeting", "body": "See you tomorrow"},
+      {"subject": "Broken", "body": ""}
+    ]
+  }'
 ```
