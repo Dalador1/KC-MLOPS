@@ -16,17 +16,19 @@ class LoginRequest(LoginData):
     pass
 
 
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in_minutes: int
+
+
 class UserResponse(BaseModel):
     email: str
     role: str
     balance: int
 
 
-class BalanceAuthRequest(LoginData):
-    pass
-
-
-class TopUpRequest(LoginData):
+class TopUpRequest(BaseModel):
     amount: int = Field(gt=0)
 
 
@@ -39,7 +41,7 @@ class EmailInput(BaseModel):
     body: str = ""
 
 
-class PredictRequest(LoginData):
+class PredictRequest(BaseModel):
     model_name: str = "spam-ham-default"
     emails: list[EmailInput] = Field(min_length=1)
 
@@ -64,10 +66,6 @@ class PredictResponse(BaseModel):
     balance: int
     predictions: list[EmailPredictionResponse]
     errors: list[ValidationErrorResponse]
-
-
-class HistoryAuthRequest(LoginData):
-    pass
 
 
 class PredictionHistoryItem(BaseModel):

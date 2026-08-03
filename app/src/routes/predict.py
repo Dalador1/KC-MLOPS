@@ -2,21 +2,24 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_session
+from ..orm import UserORM
 from ..schemas import PredictRequest, PredictResponse
 from ..services import (
     InsufficientBalanceError,
     ModelNotFoundError,
     process_prediction_request,
 )
-from .common import require_user
+from .common import get_current_user
 
 router = APIRouter(prefix="/predict", tags=["predict"])
 
 
 @router.post("", response_model=PredictResponse)
-def predict(data: PredictRequest, session: Session = Depends(get_session)) -> PredictResponse:
-    user = require_user(session, data.email, data.password)
-
+def predict(
+    data: PredictRequest,
+    session: Session = Depends(get_session),
+    user: UserORM = Depends(get_current_user),
+) -> PredictResponse:
     try:
         result = process_prediction_request(
             session=session,

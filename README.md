@@ -118,7 +118,7 @@ docker compose exec app python -m src.check_db
 FastAPI-приложение разбито на группы роутов:
 
 - `/auth/register` - регистрация пользователя.
-- `/auth/login` - авторизация по email и паролю.
+- `/auth/login` - авторизация по email и паролю, возвращает Bearer-токен.
 - `/users/me` - данные текущего пользователя.
 - `/balance` - просмотр баланса.
 - `/balance/top-up` - пополнение баланса.
@@ -126,17 +126,27 @@ FastAPI-приложение разбито на группы роутов:
 - `/history/predictions` - история ML-запросов.
 - `/history/transactions` - история операций с балансом.
 
-Авторизация в текущем задании простая: защищённые ручки получают `email` и `password` в теле запроса.
+Защищённые ручки используют Bearer-авторизацию. Сначала нужно получить токен через `/auth/login`, затем передавать его в заголовке `Authorization`.
 Настоящая ML-модель пока замокана: сервис возвращает `spam` для писем с простыми рекламными словами и `ham` для остальных.
 
-Пример запроса:
+Получение токена:
+
+```bash
+curl -X POST http://localhost/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "demo@example.com",
+    "password": "demo"
+  }'
+```
+
+Пример запроса к ML-сервису:
 
 ```bash
 curl -X POST http://localhost/predict \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
   -d '{
-    "email": "demo@example.com",
-    "password": "demo",
     "model_name": "spam-ham-default",
     "emails": [
       {"subject": "Sale", "body": "Buy now"},

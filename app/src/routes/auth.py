@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 
 from ..database import get_session
 from ..models.enums import UserRole
-from ..schemas import LoginRequest, RegisterRequest, UserResponse
+from ..schemas import LoginRequest, RegisterRequest, TokenResponse, UserResponse
+from ..security import TOKEN_TTL_MINUTES, create_access_token
 from ..services import authenticate_user, create_user, get_user, hash_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -27,12 +28,15 @@ def register(data: RegisterRequest, session: Session = Depends(get_session)) -> 
     return UserResponse(email=user.email, role=user.role, balance=user.balance.amount)
 
 
-@router.post("/login", response_model=UserResponse)
-def login(data: LoginRequest, session: Session = Depends(get_session)) -> UserResponse:
+@router.post("/login", response_model=TokenResponse)
+def login(data: LoginRequest, session: Session = Depends(get_session)) -> TokenResponse:
     user = authenticate_user(session, data.email, data.password)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный email или пароль",
         )
-    return UserResponse(email=user.email, role=user.role, balance=user.balance.amount)
+    return TokenResponse(
+        access_token=create_access_token(user.email),
+        expires_in_minutes=TOKEN_TTL_MINUTES,
+    )
