@@ -52,10 +52,13 @@ class PredictionRequestORM(Base):
     __tablename__ = "prediction_requests"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[str | None] = mapped_column(String(36), unique=True, index=True, nullable=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     model_id: Mapped[int] = mapped_column(ForeignKey("spam_models.id"), index=True)
     status: Mapped[str] = mapped_column(String(50))
     charged: Mapped[int] = mapped_column(Integer, default=0)
+    worker_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     user: Mapped[UserORM] = relationship(back_populates="prediction_requests")

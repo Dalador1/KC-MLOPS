@@ -8,6 +8,8 @@ class UserRole(Enum):
 
 class PredictionStatus(Enum):
     CREATED = "created"
+    QUEUED = "queued"
+    PROCESSING = "processing"
     DONE = "done"
     FAILED = "failed"
 

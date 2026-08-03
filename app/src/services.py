@@ -4,7 +4,6 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models.email import EmailMessage, EmailValidator
 from .models.enums import EmailLabel, PredictionStatus, UserRole
 from .orm import (
     CreditBalanceORM,
@@ -15,14 +14,6 @@ from .orm import (
     UserORM,
     ValidationErrorORM,
 )
-
-
-class ModelNotFoundError(Exception):
-    pass
-
-
-class InsufficientBalanceError(Exception):
-    pass
 
 
 def hash_password(password: str) -> str:
@@ -123,16 +114,38 @@ def create_prediction_request(
     session: Session,
     user: UserORM,
     model: SpamModelORM,
+    task_id: str | None = None,
+    status: PredictionStatus = PredictionStatus.CREATED,
 ) -> PredictionRequestORM:
     request = PredictionRequestORM(
+        task_id=task_id,
         user_id=user.id,
         model_id=model.id,
-        status=PredictionStatus.CREATED.value,
+        status=status.value,
     )
     session.add(request)
     session.commit()
     session.refresh(request)
     return request
+
+
+def get_prediction_request_by_task_id(
+    session: Session,
+    task_id: str,
+) -> PredictionRequestORM | None:
+    return session.scalar(
+        select(PredictionRequestORM).where(PredictionRequestORM.task_id == task_id)
+    )
+
+
+def fail_prediction_request(
+    session: Session,
+    request: PredictionRequestORM,
+    message: str,
+) -> None:
+    request.status = PredictionStatus.FAILED.value
+    request.error_message = message[:500]
+    session.commit()
 
 
 def complete_prediction_request(
@@ -189,77 +202,3 @@ def get_transaction_history(session: Session, user: UserORM) -> list[Transaction
             .order_by(TransactionORM.created_at.desc())
         )
     )
-
-
-def mock_spam_ham_predict(email: EmailMessage, source: dict) -> dict:
-    text = email.text_for_model().lower()
-    spam_words = ("free", "buy", "sale", "win", "скидка", "купить", "акция")
-    is_spam = any(word in text for word in spam_words)
-    return {
-        "subject": source["subject"],
-        "body": source["body"],
-        "label": EmailLabel.SPAM.value if is_spam else EmailLabel.HAM.value,
-        "probability": 0.9 if is_spam else 0.8,
-    }
-
-
-def process_prediction_request(
-    session: Session,
-    user: UserORM,
-    model_name: str,
-    emails: list[dict],
-) -> dict:
-    model = get_spam_model(session, model_name)
-    if model is None:
-        raise ModelNotFoundError("ML-модель не найдена")
-
-    email_messages = [
-        EmailMessage(subject=email["subject"], body=email["body"])
-        for email in emails
-    ]
-    valid_emails, validation_errors = EmailValidator().validate(email_messages)
-
-    errors = [
-        {
-            "row": error._row,
-            "field": error._field,
-            "message": error._message,
-        }
-        for error in validation_errors
-    ]
-
-    valid_rows = [
-        (row, email)
-        for row, email in enumerate(email_messages)
-        if email.is_valid()
-    ]
-    charged = model.cost_per_email * len(valid_emails)
-
-    if charged > 0 and user.balance.amount < charged:
-        raise InsufficientBalanceError("Недостаточно средств")
-
-    request = create_prediction_request(session, user, model)
-    predictions = [
-        mock_spam_ham_predict(email, emails[row])
-        for row, email in valid_rows
-    ]
-
-    if charged > 0:
-        charge_balance(session, user, charged, request)
-
-    complete_prediction_request(
-        session=session,
-        request=request,
-        charged=charged,
-        predictions=predictions,
-        errors=errors,
-    )
-
-    return {
-        "request_id": request.id,
-        "status": request.status,
-        "charged": charged,
-        "balance": user.balance.amount,
-        "predictions": predictions,
-        "errors": errors,
-    }

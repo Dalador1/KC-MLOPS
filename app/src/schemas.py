@@ -42,7 +42,7 @@ class EmailInput(BaseModel):
 
 
 class PredictRequest(BaseModel):
-    model_name: str = "spam-ham-default"
+    model_name: str = "RUSpam/spam_deberta_v4"
     emails: list[EmailInput] = Field(min_length=1)
 
 
@@ -59,20 +59,29 @@ class EmailPredictionResponse(BaseModel):
     probability: float
 
 
+class PredictAcceptedResponse(BaseModel):
+    task_id: str
+    status: str
+
+
 class PredictResponse(BaseModel):
+    task_id: str
     request_id: int
     status: str
     charged: int
-    balance: int
+    worker_id: str | None
+    error_message: str | None
     predictions: list[EmailPredictionResponse]
     errors: list[ValidationErrorResponse]
 
 
 class PredictionHistoryItem(BaseModel):
     id: int
+    task_id: str | None
     model_name: str
     status: str
     charged: int
+    worker_id: str | None
     created_at: datetime
     predictions_count: int
     errors_count: int

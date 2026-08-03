@@ -19,9 +19,11 @@ def prediction_history(
     return [
         PredictionHistoryItem(
             id=request.id,
+            task_id=request.task_id,
             model_name=request.model.name,
             status=request.status,
             charged=request.charged,
+            worker_id=request.worker_id,
             created_at=request.created_at,
             predictions_count=len(request.predictions),
             errors_count=len(request.validation_errors),

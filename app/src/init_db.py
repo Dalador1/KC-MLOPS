@@ -1,5 +1,6 @@
 from time import sleep
 
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError
 
 from .database import SessionLocal, engine
@@ -8,10 +9,36 @@ from .orm import Base
 from .services import create_spam_model, create_user, hash_password, top_up_balance
 
 
+def migrate_prediction_requests() -> None:
+    columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("prediction_requests")
+    }
+    migrations = {
+        "task_id": "ALTER TABLE prediction_requests ADD COLUMN IF NOT EXISTS task_id VARCHAR(36)",
+        "worker_id": "ALTER TABLE prediction_requests ADD COLUMN IF NOT EXISTS worker_id VARCHAR(120)",
+        "error_message": (
+            "ALTER TABLE prediction_requests "
+            "ADD COLUMN IF NOT EXISTS error_message VARCHAR(500)"
+        ),
+    }
+    with engine.begin() as connection:
+        for column, statement in migrations.items():
+            if column not in columns:
+                connection.execute(text(statement))
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_prediction_requests_task_id "
+                "ON prediction_requests (task_id)"
+            )
+        )
+
+
 def init_db() -> None:
     for attempt in range(30):
         try:
             Base.metadata.create_all(bind=engine)
+            migrate_prediction_requests()
             break
         except OperationalError:
             if attempt == 29:
@@ -33,7 +60,7 @@ def init_db() -> None:
             role=UserRole.ADMIN,
             initial_balance=0,
         )
-        create_spam_model(session, name="spam-ham-default", cost_per_email=1)
+        create_spam_model(session, name="RUSpam/spam_deberta_v4", cost_per_email=1)
 
         if user.balance.amount == 0:
             top_up_balance(session, user=user, amount=100)

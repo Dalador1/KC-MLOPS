@@ -1,12 +1,8 @@
-
-
 # Описание проекта:
 
-Проект описывает доменную модель сервиса для проверки письма на spam / ham. 
+Проект описывает доменную модель сервиса для проверки письма на spam / ham.
 
-## Описание сущностей: 
-
-
+## Описание сущностей:
 
 - `User` - пользователь сервиса с ролью и данными для авторизации.
 - `CreditBalance` - кредитный баланс пользователя.
@@ -58,12 +54,13 @@
 
 ## Docker Compose
 
-В `docker-compose.yml` описаны четыре сервиса:
+В `docker-compose.yml` описаны backend, инфраструктура и два ML-воркера:
 
 - `app` - backend-приложение. Конфигурируется через `.env` и `app/.env`, исходники подключены через volume.
 - `web-proxy` - Nginx reverse proxy. Принимает запросы на портах `80` и `443` и проксирует их в `app`.
 - `rabbitmq` - брокер сообщений RabbitMQ с management UI на порту `15672`.
 - `database` - PostgreSQL для хранения данных приложения.
+- `worker-1`, `worker-2` - consumers одной RabbitMQ-очереди. Задачи распределяются между ними round-robin.
 
 Данные RabbitMQ и PostgreSQL сохраняются в локальной директории `data/`.
 
@@ -93,7 +90,7 @@
 
 - `demo@example.com` - демо-пользователь.
 - `admin@example.com` - демо-администратор.
-- `spam-ham-default` - базовая ML-модель.
+- `RUSpam/spam_deberta_v4` - русскоязычная DeBERTa-модель определения спама.
 
 ## Запуск
 
@@ -122,12 +119,27 @@ FastAPI-приложение разбито на группы роутов:
 - `/users/me` - данные текущего пользователя.
 - `/balance` - просмотр баланса.
 - `/balance/top-up` - пополнение баланса.
-- `/predict` - проверка писем на spam/ham.
+- `POST /predict` - постановка асинхронной spam/ham-задачи в RabbitMQ.
+- `GET /predict/{task_id}` - статус и результат задачи.
 - `/history/predictions` - история ML-запросов.
 - `/history/transactions` - история операций с балансом.
 
 Защищённые ручки используют Bearer-авторизацию. Сначала нужно получить токен через `/auth/login`, затем передавать его в заголовке `Authorization`.
-Настоящая ML-модель пока замокана: сервис возвращает `spam` для писем с простыми рекламными словами и `ham` для остальных.
+ML-предикт выполняется моделью `RUSpam/spam_deberta_v4`. 
+
+Publisher отправляет в очередь `spam_prediction_tasks` JSON:
+
+```json
+{
+  "task_id": "uuid",
+  "features": {"emails": [{"subject": "...", "body": "..."}]},
+  "model": "RUSpam/spam_deberta_v4",
+  "user_id": 1,
+  "timestamp": "2026-01-01T12:00:00+00:00"
+}
+```
+
+Воркеры валидируют сообщение и письма, выполняют предикт и напрямую сохраняют статус, `worker_id`, ошибки и результаты в PostgreSQL. Кредиты списываются только после успешного предикта. 
 
 Получение токена:
 
@@ -147,11 +159,33 @@ curl -X POST http://localhost/predict \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <access_token>" \
   -d '{
-    "model_name": "spam-ham-default",
-    "emails": [
-      {"subject": "Sale", "body": "Buy now"},
-      {"subject": "Meeting", "body": "See you tomorrow"},
-      {"subject": "Broken", "body": ""}
-    ]
-  }'
+  "model_name": "RUSpam/spam_deberta_v4",
+  "emails": [
+    {
+      "subject": "Вы выиграли",
+      "body": "Получите денежный приз прямо сейчас по ссылке"
+    },
+    {
+      "subject": "Рабочая встреча",
+      "body": "Созвон переносится на завтра в 11 часов"
+    },
+    {
+      "subject": "Ошибка",
+      "body": ""
+    }
+  ]
+}'
+```
+
+API вернёт `task_id`. Получение результата:
+
+```bash
+curl http://localhost/predict/<task_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Проверка распределения задач между воркерами:
+
+```bash
+docker compose logs worker-1 worker-2
 ```

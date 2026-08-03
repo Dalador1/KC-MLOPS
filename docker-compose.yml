@@ -11,6 +11,42 @@ services:
       - database
       - rabbitmq
 
+  worker-1:
+    build:
+      context: ./app
+    command: python -m src.worker
+    env_file:
+      - ./.env
+      - ./app/.env
+    environment:
+      WORKER_ID: worker-1
+      HF_HOME: /models/huggingface
+    volumes:
+      - ./app/src:/app/src
+      - huggingface-cache:/models/huggingface
+    depends_on:
+      - database
+      - rabbitmq
+    restart: on-failure
+
+  worker-2:
+    build:
+      context: ./app
+    command: python -m src.worker
+    env_file:
+      - ./.env
+      - ./app/.env
+    environment:
+      WORKER_ID: worker-2
+      HF_HOME: /models/huggingface
+    volumes:
+      - ./app/src:/app/src
+      - huggingface-cache:/models/huggingface
+    depends_on:
+      - database
+      - rabbitmq
+    restart: on-failure
+
   web-proxy:
     build:
       context: ./web-proxy
@@ -37,3 +73,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
+
+volumes:
+  huggingface-cache:
