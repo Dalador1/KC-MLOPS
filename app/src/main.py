@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .init_db import init_db
-from .routes import auth, balance, history, predict, users
+from .routes import auth, balance, history, internal, predict, users
 
 
 @asynccontextmanager
@@ -24,6 +24,7 @@ app.include_router(users.router)
 app.include_router(balance.router)
 app.include_router(predict.router)
 app.include_router(history.router)
+app.include_router(internal.router, include_in_schema=False)
 
 
 @app.exception_handler(StarletteHTTPException)

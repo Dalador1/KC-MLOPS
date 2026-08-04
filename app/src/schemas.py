@@ -75,6 +75,25 @@ class PredictResponse(BaseModel):
     errors: list[ValidationErrorResponse]
 
 
+class WorkerProcessingRequest(BaseModel):
+    worker_id: str
+
+
+class WorkerProcessingResponse(BaseModel):
+    should_process: bool
+
+
+class WorkerResultRequest(BaseModel):
+    worker_id: str
+    predictions: list[EmailPredictionResponse]
+    errors: list[ValidationErrorResponse]
+
+
+class WorkerFailureRequest(BaseModel):
+    worker_id: str
+    message: str
+
+
 class PredictionHistoryItem(BaseModel):
     id: int
     task_id: str | None

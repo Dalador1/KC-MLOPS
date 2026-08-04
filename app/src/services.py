@@ -148,6 +148,95 @@ def fail_prediction_request(
     session.commit()
 
 
+def start_worker_processing(
+    session: Session,
+    task_id: str,
+    worker_id: str,
+) -> bool:
+    request = session.scalar(
+        select(PredictionRequestORM)
+        .where(PredictionRequestORM.task_id == task_id)
+        .with_for_update()
+    )
+    if request is None:
+        raise LookupError("Задача не найдена")
+    if request.status == PredictionStatus.DONE.value:
+        return False
+
+    request.status = PredictionStatus.PROCESSING.value
+    request.worker_id = worker_id
+    request.error_message = None
+    session.commit()
+    return True
+
+
+def save_worker_result(
+    session: Session,
+    task_id: str,
+    worker_id: str,
+    predictions: list[dict],
+    errors: list[dict],
+) -> PredictionRequestORM:
+    request = session.scalar(
+        select(PredictionRequestORM)
+        .where(PredictionRequestORM.task_id == task_id)
+        .with_for_update()
+    )
+    if request is None:
+        raise LookupError("Задача не найдена")
+    if request.status == PredictionStatus.DONE.value:
+        return request
+
+    balance = session.scalar(
+        select(CreditBalanceORM)
+        .where(CreditBalanceORM.user_id == request.user_id)
+        .with_for_update()
+    )
+    charged = request.model.cost_per_email * len(predictions)
+    if balance is None or balance.amount < charged:
+        raise ValueError("Недостаточно средств")
+
+    for prediction in predictions:
+        session.add(
+            EmailPredictionORM(
+                request_id=request.id,
+                subject=prediction["subject"],
+                body=prediction["body"],
+                label=prediction["label"],
+                probability=prediction["probability"],
+            )
+        )
+    for error in errors:
+        session.add(
+            ValidationErrorORM(
+                request_id=request.id,
+                row=error["row"],
+                field=error["field"],
+                message=error["message"],
+            )
+        )
+
+    if charged:
+        balance.amount -= charged
+        balance.updated_at = datetime.utcnow()
+        session.add(
+            TransactionORM(
+                user_id=request.user_id,
+                amount=charged,
+                transaction_type="charge",
+                prediction_request_id=request.id,
+            )
+        )
+
+    request.status = PredictionStatus.DONE.value
+    request.charged = charged
+    request.worker_id = worker_id
+    request.error_message = None
+    session.commit()
+    session.refresh(request)
+    return request
+
+
 def complete_prediction_request(
     session: Session,
     request: PredictionRequestORM,

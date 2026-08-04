@@ -13,37 +13,35 @@ services:
 
   worker-1:
     build:
-      context: ./app
+      context: ./worker
     command: python -m src.worker
     env_file:
       - ./.env
-      - ./app/.env
     environment:
       WORKER_ID: worker-1
       HF_HOME: /models/huggingface
     volumes:
-      - ./app/src:/app/src
+      - ./worker/src:/worker/src:ro
       - huggingface-cache:/models/huggingface
     depends_on:
-      - database
+      - app
       - rabbitmq
     restart: on-failure
 
   worker-2:
     build:
-      context: ./app
+      context: ./worker
     command: python -m src.worker
     env_file:
       - ./.env
-      - ./app/.env
     environment:
       WORKER_ID: worker-2
       HF_HOME: /models/huggingface
     volumes:
-      - ./app/src:/app/src
+      - ./worker/src:/worker/src:ro
       - huggingface-cache:/models/huggingface
     depends_on:
-      - database
+      - app
       - rabbitmq
     restart: on-failure
 

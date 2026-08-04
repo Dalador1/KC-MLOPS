@@ -45,6 +45,13 @@
 │   ├── .env
 │   ├── Dockerfile
 │   └── requirements.txt
+├── worker/
+│   ├── src/
+│   │   ├── api_client.py
+│   │   ├── ml_predictor.py
+│   │   └── worker.py
+│   ├── Dockerfile
+│   └── requirements.txt
 ├── web-proxy/
 │   ├── Dockerfile
 │   └── nginx.conf
@@ -60,7 +67,7 @@
 - `web-proxy` - Nginx reverse proxy. Принимает запросы на портах `80` и `443` и проксирует их в `app`.
 - `rabbitmq` - брокер сообщений RabbitMQ с management UI на порту `15672`.
 - `database` - PostgreSQL для хранения данных приложения.
-- `worker-1`, `worker-2` - consumers одной RabbitMQ-очереди. Задачи распределяются между ними round-robin.
+- `worker-1`, `worker-2` - независимые consumers одной RabbitMQ-очереди. Они собираются через отдельный `worker/Dockerfile` и имеют собственные зависимости.
 
 Данные RabbitMQ и PostgreSQL сохраняются в локальной директории `data/`.
 
@@ -139,7 +146,7 @@ Publisher отправляет в очередь `spam_prediction_tasks` JSON:
 }
 ```
 
-Воркеры валидируют сообщение и письма, выполняют предикт и напрямую сохраняют статус, `worker_id`, ошибки и результаты в PostgreSQL. Кредиты списываются только после успешного предикта. 
+Воркеры валидируют сообщение и письма, выполняют предикт и отправляют статус, `worker_id`, ошибки и результаты во внутренний REST API. Только backend работает с PostgreSQL и атомарно сохраняет предсказания, списание и транзакцию. Внутренний API защищён заголовком `X-Worker-Token` и скрыт из Swagger.
 
 Получение токена:
 
