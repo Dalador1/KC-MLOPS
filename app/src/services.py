@@ -1,6 +1,8 @@
 import hashlib
 from datetime import datetime
+from uuid import uuid4
 
+from pika.exceptions import AMQPError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,19 @@ from .orm import (
     UserORM,
     ValidationErrorORM,
 )
+from .rabbitmq import publish_prediction_task
+
+
+class ModelNotFoundError(Exception):
+    pass
+
+
+class InsufficientBalanceError(Exception):
+    pass
+
+
+class QueueUnavailableError(Exception):
+    pass
 
 
 def hash_password(password: str) -> str:
@@ -126,6 +141,39 @@ def create_prediction_request(
     session.add(request)
     session.commit()
     session.refresh(request)
+    return request
+
+
+def submit_prediction_task(
+    session: Session,
+    user: UserORM,
+    model_name: str,
+    emails: list[dict],
+) -> PredictionRequestORM:
+    model = get_spam_model(session, model_name)
+    if model is None:
+        raise ModelNotFoundError("ML-модель не найдена")
+    if user.balance.amount <= 0:
+        raise InsufficientBalanceError("Пополните баланс перед проверкой")
+
+    valid_emails_count = sum(bool(email["body"].strip()) for email in emails)
+    expected_charge = model.cost_per_email * valid_emails_count
+    if user.balance.amount < expected_charge:
+        raise InsufficientBalanceError("Недостаточно средств")
+
+    task_id = str(uuid4())
+    request = create_prediction_request(
+        session=session,
+        user=user,
+        model=model,
+        task_id=task_id,
+        status=PredictionStatus.QUEUED,
+    )
+    try:
+        publish_prediction_task(task_id, model_name, user.id, emails)
+    except AMQPError as exc:
+        fail_prediction_request(session, request, "RabbitMQ недоступен")
+        raise QueueUnavailableError("Очередь временно недоступна") from exc
     return request
 
 

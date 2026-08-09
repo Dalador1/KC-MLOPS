@@ -1,14 +1,23 @@
+import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
+from time import perf_counter
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .init_db import init_db
-from .routes import auth, balance, history, internal, predict, users
+from .routes import auth, balance, history, internal, predict, users, web
+
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -19,12 +28,55 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Spam/Ham ML Service", lifespan=lifespan)
 
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost,http://localhost:8000,http://127.0.0.1",
+    ).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid4()))
+    started_at = perf_counter()
+    response = await call_next(request)
+    elapsed = perf_counter() - started_at
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time"] = f"{elapsed:.4f}"
+    logger.info(
+        "%s %s -> %s in %.4fs request_id=%s",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed,
+        request_id,
+    )
+    return response
+
+
+app.mount(
+    "/static",
+    StaticFiles(directory=Path(__file__).parent / "static"),
+    name="static",
+)
+
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(balance.router)
 app.include_router(predict.router)
 app.include_router(history.router)
 app.include_router(internal.router, include_in_schema=False)
+app.include_router(web.router, include_in_schema=False)
 
 
 @app.exception_handler(StarletteHTTPException)
