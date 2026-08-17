@@ -9,10 +9,11 @@ import pika
 from pydantic import BaseModel, ValidationError
 
 from .api_client import WorkerApiClient, WorkerApiRejected, WorkerApiUnavailable
+from .logging_config import setup_logging
 from .ml_predictor import SpamPredictor
 
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+setup_logging()
 logger = logging.getLogger(__name__)
 QUEUE_NAME = os.getenv("RABBITMQ_QUEUE", "spam_prediction_tasks")
 
@@ -105,7 +106,13 @@ def run_worker() -> None:
                 return
             predictions, errors = predict_task(task, predictor)
             api.complete(task.task_id, worker_id, predictions, errors)
-            logger.info("%s processed task %s", worker_id, task.task_id)
+            logger.info(
+                "prediction_processed worker_id=%s task_id=%s predictions=%s errors=%s",
+                worker_id,
+                task.task_id,
+                len(predictions),
+                len(errors),
+            )
             channel.basic_ack(delivery_tag=method.delivery_tag)
         except WorkerApiUnavailable:
             logger.exception("%s cannot save task %s", worker_id, task_id)

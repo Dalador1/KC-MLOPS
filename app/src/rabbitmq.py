@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from datetime import datetime, timezone
 
@@ -6,6 +7,7 @@ import pika
 
 
 QUEUE_NAME = os.getenv("RABBITMQ_QUEUE", "spam_prediction_tasks")
+logger = logging.getLogger(__name__)
 
 
 def _connection_parameters() -> pika.ConnectionParameters:
@@ -48,3 +50,9 @@ def publish_prediction_task(
                 delivery_mode=pika.DeliveryMode.Persistent,
             ),
         )
+    logger.info(
+        "rabbitmq_message_published task_id=%s queue=%s model=%s",
+        task_id,
+        QUEUE_NAME,
+        model_name,
+    )

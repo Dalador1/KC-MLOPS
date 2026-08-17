@@ -14,16 +14,21 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .init_db import init_db
+from .logging_config import setup_logging
 from .routes import auth, balance, history, internal, predict, users, web
 
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("application_starting")
     init_db()
+    logger.info("application_started")
     yield
+    logger.info("application_stopped")
 
 
 app = FastAPI(title="Spam/Ham ML Service", lifespan=lifespan)
@@ -49,12 +54,23 @@ app.add_middleware(
 async def request_context_middleware(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID", str(uuid4()))
     started_at = perf_counter()
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed = perf_counter() - started_at
+        logger.exception(
+            "http_request_failed method=%s path=%s duration=%.4fs request_id=%s",
+            request.method,
+            request.url.path,
+            elapsed,
+            request_id,
+        )
+        raise
     elapsed = perf_counter() - started_at
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Process-Time"] = f"{elapsed:.4f}"
     logger.info(
-        "%s %s -> %s in %.4fs request_id=%s",
+        "http_request method=%s path=%s status=%s duration=%.4fs request_id=%s",
         request.method,
         request.url.path,
         response.status_code,

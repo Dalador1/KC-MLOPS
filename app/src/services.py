@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from datetime import datetime
 from uuid import uuid4
 
@@ -17,6 +18,9 @@ from .orm import (
     ValidationErrorORM,
 )
 from .rabbitmq import publish_prediction_task
+
+
+logger = logging.getLogger(__name__)
 
 
 class ModelNotFoundError(Exception):
@@ -38,9 +42,12 @@ def hash_password(password: str) -> str:
 def authenticate_user(session: Session, email: str, password: str) -> UserORM | None:
     user = get_user(session, email)
     if user is None:
+        logger.warning("authentication_failed reason=user_not_found")
         return None
     if user.password_hash != hash_password(password):
+        logger.warning("authentication_failed user_id=%s reason=invalid_password", user.id)
         return None
+    logger.info("authentication_succeeded user_id=%s", user.id)
     return user
 
 
@@ -60,6 +67,7 @@ def create_user(
     session.add(user)
     session.commit()
     session.refresh(user)
+    logger.info("user_created user_id=%s role=%s", user.id, user.role)
     return user
 
 
@@ -97,6 +105,13 @@ def top_up_balance(session: Session, user: UserORM, amount: int) -> TransactionO
     session.add(transaction)
     session.commit()
     session.refresh(transaction)
+    logger.info(
+        "balance_topped_up user_id=%s amount=%s balance=%s transaction_id=%s",
+        user.id,
+        amount,
+        user.balance.amount,
+        transaction.id,
+    )
     return transaction
 
 
@@ -122,6 +137,13 @@ def charge_balance(
     session.add(transaction)
     session.commit()
     session.refresh(transaction)
+    logger.info(
+        "balance_charged user_id=%s amount=%s balance=%s transaction_id=%s",
+        user.id,
+        amount,
+        user.balance.amount,
+        transaction.id,
+    )
     return transaction
 
 
@@ -173,7 +195,15 @@ def submit_prediction_task(
         publish_prediction_task(task_id, model_name, user.id, emails)
     except AMQPError as exc:
         fail_prediction_request(session, request, "RabbitMQ недоступен")
+        logger.exception("prediction_queue_failed task_id=%s user_id=%s", task_id, user.id)
         raise QueueUnavailableError("Очередь временно недоступна") from exc
+    logger.info(
+        "prediction_queued task_id=%s user_id=%s model=%s emails_count=%s",
+        task_id,
+        user.id,
+        model_name,
+        len(emails),
+    )
     return request
 
 
@@ -194,6 +224,7 @@ def fail_prediction_request(
     request.status = PredictionStatus.FAILED.value
     request.error_message = message[:500]
     session.commit()
+    logger.warning("prediction_failed task_id=%s reason=%s", request.task_id, message[:500])
 
 
 def start_worker_processing(
@@ -215,6 +246,7 @@ def start_worker_processing(
     request.worker_id = worker_id
     request.error_message = None
     session.commit()
+    logger.info("prediction_processing task_id=%s worker_id=%s", task_id, worker_id)
     return True
 
 
@@ -282,6 +314,14 @@ def save_worker_result(
     request.error_message = None
     session.commit()
     session.refresh(request)
+    logger.info(
+        "prediction_completed task_id=%s worker_id=%s predictions=%s errors=%s charged=%s",
+        task_id,
+        worker_id,
+        len(predictions),
+        len(errors),
+        charged,
+    )
     return request
 
 
