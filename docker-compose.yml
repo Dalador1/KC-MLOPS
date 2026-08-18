@@ -1,0 +1,76 @@
+services:
+  app:
+    build:
+      context: ./app
+    env_file:
+      - ./.env
+      - ./app/.env
+    volumes:
+      - ./app/src:/app/src
+    depends_on:
+      - database
+      - rabbitmq
+
+  worker-1:
+    build:
+      context: ./worker
+    command: python -m src.worker
+    env_file:
+      - ./.env
+    environment:
+      WORKER_ID: worker-1
+      HF_HOME: /models/huggingface
+    volumes:
+      - ./worker/src:/worker/src:ro
+      - huggingface-cache:/models/huggingface
+    depends_on:
+      - app
+      - rabbitmq
+    restart: on-failure
+
+  worker-2:
+    build:
+      context: ./worker
+    command: python -m src.worker
+    env_file:
+      - ./.env
+    environment:
+      WORKER_ID: worker-2
+      HF_HOME: /models/huggingface
+    volumes:
+      - ./worker/src:/worker/src:ro
+      - huggingface-cache:/models/huggingface
+    depends_on:
+      - app
+      - rabbitmq
+    restart: on-failure
+
+  web-proxy:
+    build:
+      context: ./web-proxy
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: on-failure
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - ./data/rabbitmq:/var/lib/rabbitmq
+
+  database:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+volumes:
+  huggingface-cache:

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% if page == "task" and task.status in ["queued", "processing"] %}
+  <meta http-equiv="refresh" content="2">
+  {% endif %}
+  <title>MailGuard — проверка писем</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">
+      <span class="brand-mark">MG</span>
+      <span>MailGuard</span>
+    </a>
+    <nav>
+      {% if user %}
+      <a href="/dashboard">Кабинет</a>
+      <a href="/history">История</a>
+      <form action="/web/logout" method="post"><button class="link-button" type="submit">Выйти</button></form>
+      {% else %}
+      <a href="/login">Войти</a>
+      <a href="/register">Регистрация</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main>
+    {% if page == "home" %}
+    <section class="hero">
+      <p class="eyebrow">ML-сервис классификации email</p>
+      <h1>MailGuard</h1>
+      <p class="lead">Проверяет русскоязычные письма и определяет, является сообщение спамом или обычной перепиской.</p>
+      <div class="hero-actions">
+        <a class="button primary" href="{{ '/dashboard' if user else '/register' }}">Начать работу</a>
+        {% if not user %}<a class="button secondary" href="/login">Войти</a>{% endif %}
+      </div>
+    </section>
+    <section class="feature-band">
+      <h2>Возможности</h2>
+      <ul>
+        <li>Классификация писем на spam и ham.</li>
+        <li>Асинхронная обработка через RabbitMQ.</li>
+        <li>История запросов и списаний.</li>
+      </ul>
+    </section>
+
+    {% elif page in ["login", "register"] %}
+    <section class="auth-layout">
+      <div class="auth-copy">
+        <p class="eyebrow">Личный кабинет</p>
+        <h1>{{ "Вход" if page == "login" else "Регистрация" }}</h1>
+      </div>
+      <form class="form-panel" action="{{ '/web/login' if page == 'login' else '/web/register' }}" method="post">
+        <label>Email<input type="email" name="email" autocomplete="email" required placeholder="name@example.com"></label>
+        <label>Пароль<input type="password" name="password" minlength="4" required></label>
+        <button class="button primary full" type="submit">{{ "Войти" if page == "login" else "Создать аккаунт" }}</button>
+        {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+        <p class="form-switch">
+          {% if page == "login" %}Нет аккаунта? <a href="/register">Зарегистрироваться</a>{% else %}Уже есть аккаунт? <a href="/login">Войти</a>{% endif %}
+        </p>
+      </form>
+    </section>
+
+    {% elif page == "dashboard" %}
+    <section class="page-shell">
+      <header class="page-heading">
+        <div><p class="eyebrow">Личный кабинет</p><h1>Проверка писем</h1></div>
+        <div class="balance-block"><span>Баланс</span><strong>{{ user.balance.amount }}</strong><small>кредитов</small></div>
+      </header>
+      {% if message %}<div class="notice success">{{ message }}</div>{% endif %}
+      {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+      <div class="workspace-grid">
+        <section class="tool-panel">
+          <h2>Новая проверка</h2>
+          <p>Можно отправить до трёх писем за один запрос.</p>
+          <form action="/web/predict" method="post">
+            {% for row in range(3) %}
+            <div class="email-entry">
+              <label>Тема {{ row + 1 }}<input type="text" name="subject" placeholder="Тема письма"></label>
+              <label>Текст письма {{ row + 1 }}<textarea name="body" placeholder="Вставьте содержимое письма"></textarea></label>
+            </div>
+            {% endfor %}
+            <button class="button primary" type="submit">Отправить на проверку</button>
+          </form>
+        </section>
+        <aside class="side-panel">
+          <h2>Пополнение</h2>
+          <p>Эквайринг не подключён.</p>
+          <form action="/web/balance/top-up" method="post" class="inline-form">
+            <input type="number" name="amount" min="1" value="10" required aria-label="Сумма пополнения">
+            <button class="button secondary" type="submit">Пополнить</button>
+          </form>
+        </aside>
+      </div>
+    </section>
+
+    {% elif page == "task" %}
+    <section class="page-shell">
+      <header class="page-heading">
+        <div><p class="eyebrow">Результат проверки</p><h1>Задача</h1></div>
+        <span class="status {{ task.status }}">{{ task.status }}</span>
+      </header>
+      <section class="result-section">
+        <p><strong>ID:</strong> {{ task.task_id }}</p>
+        {% if task.status in ["queued", "processing"] %}
+        <p>Задача обрабатывается. Страница обновится автоматически через 2 секунды.</p>
+        {% elif task.status == "failed" %}
+        <div class="notice error">{{ task.error_message or "Ошибка обработки" }}</div>
+        {% else %}
+        <p>Списано кредитов: <strong>{{ task.charged }}</strong></p>
+        {% for prediction in task.predictions %}
+        <div class="result-row">
+          <strong>{{ prediction.subject or "Без темы" }}</strong>
+          <span class="label {{ prediction.label }}">{{ prediction.label }}</span>
+          <span>{{ (prediction.probability * 100) | round | int }}%</span>
+        </div>
+        {% endfor %}
+        {% if task.validation_errors %}
+        <div class="validation-block">
+          <strong>Отклонённые данные</strong>
+          {% for item in task.validation_errors %}<p>Строка {{ item.row + 1 }}: {{ item.message }}</p>{% endfor %}
+        </div>
+        {% endif %}
+        {% endif %}
+        <p><a href="/dashboard">Новая проверка</a> · <a href="/history">Перейти к истории</a></p>
+      </section>
+    </section>
+
+    {% elif page == "history" %}
+    <section class="page-shell">
+      <header class="page-heading"><div><p class="eyebrow">Личный кабинет</p><h1>История операций</h1></div></header>
+      {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+      <h2>ML-запросы</h2>
+      <div class="table-wrap">
+        {% if predictions %}
+        <table>
+          <thead><tr><th>Дата</th><th>Статус</th><th>Списано</th><th>Обработано</th><th>Ошибки</th><th></th></tr></thead>
+          <tbody>
+            {% for item in predictions %}
+            <tr>
+              <td>{{ item.created_at.strftime("%d.%m.%Y %H:%M") }}</td>
+              <td><span class="status {{ item.status }}">{{ item.status }}</span></td>
+              <td>{{ item.charged }}</td>
+              <td>{{ item.predictions | length }}</td>
+              <td>{{ item.validation_errors | length }}</td>
+              <td>{% if item.task_id %}<a href="/tasks/{{ item.task_id }}">Подробнее</a>{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}<p class="empty">ML-запросов пока нет.</p>{% endif %}
+      </div>
+
+      <h2 class="history-heading">Транзакции</h2>
+      <div class="table-wrap">
+        {% if transactions %}
+        <table>
+          <thead><tr><th>Дата</th><th>Операция</th><th>Сумма</th><th>ML-запрос</th></tr></thead>
+          <tbody>
+            {% for item in transactions %}
+            <tr>
+              <td>{{ item.created_at.strftime("%d.%m.%Y %H:%M") }}</td>
+              <td>{{ "Пополнение" if item.transaction_type == "top_up" else "Списание" }}</td>
+              <td>{{ "+" if item.transaction_type == "top_up" else "−" }}{{ item.amount }}</td>
+              <td>{{ item.prediction_request_id or "—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}<p class="empty">Транзакций пока нет.</p>{% endif %}
+      </div>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>
